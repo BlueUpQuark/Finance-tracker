@@ -25,6 +25,14 @@ enum : int {
 
 
 	ID_Accounts_New,
+
+	ID_Spending_PrevMonth,
+	ID_Spending_NextMonth,
+	ID_Spending_AddTxn,
+	ID_Transactions_PrevMonth,
+	ID_Transactions_NextMonth,
+
+
 };
 
 
@@ -55,9 +63,13 @@ private:
 
 	// Page toolbars (per screen) — labels/buttons differ per page
 	wxStaticText* m_lblSpendingMonth = nullptr;
-
-
-	wxStaticText* m_lblTxnMonth = nullptr;
+    wxStaticText* m_lblTxnMonth = nullptr;
+	wxStaticText* m_lblIncomeVal = nullptr;
+	wxStaticText* m_lblExpenseVal = nullptr;
+	wxStaticText* m_lblBalanceVal = nullptr;
+	wxStaticText* m_lblTxnIncome = nullptr;
+	wxStaticText* m_lblTxnExpense = nullptr;
+	wxDataViewListCtrl* m_txnList = nullptr;
 
 
 	// Helpers
@@ -67,7 +79,8 @@ private:
 	wxPanel* BuildTransactionsPage(wxWindow* parent);
 	wxPanel* BuildCategoriesPage(wxWindow* parent);
 	wxPanel* BuildAccountsPage(wxWindow* parent);
-
+	wxString MonthLabelFromOffset(int offset) const;
+	void RefreshSpendingView();  // updates month label, summary numbers, and category list
 
 	void UpdateActiveNavButton(int whichId);
 	wxString CurrentMonthLabel() const; // e.g. "October 2025"
@@ -78,15 +91,19 @@ private:
 	void OnNavTransactions(wxCommandEvent&);
 	void OnNavCategories(wxCommandEvent&);
 	void OnNavAccounts(wxCommandEvent&);
+	void OnSpendingPrevMonth(wxCommandEvent&);
+	void OnSpendingNextMonth(wxCommandEvent&);
+	void OnSpendingAddTxn(wxCommandEvent&);
 
 
 	// Toolbar handlers (placeholders for now)
 	void OnSpendingSettings(wxCommandEvent&);
 
-
+	void RefreshTransactionsView();
 	void OnTransactionsNew(wxCommandEvent&);
 	void OnTransactionsSort(wxCommandEvent&);
-
+	void OnTransactionsPrevMonth(wxCommandEvent&);
+	void OnTransactionsNextMonth(wxCommandEvent&);
 
 	void OnCategoriesNew(wxCommandEvent&);
 	void OnCategoriesSort(wxCommandEvent&);
@@ -94,6 +111,12 @@ private:
 
 	void OnAccountsNew(wxCommandEvent&);
 
+	int m_spendMonthOffset = 0;                 // 0 = current month, -1 = prev, +1 = next
+	int m_txnMonthOffset = 0;
+	
+	class wxDataViewListCtrl* m_catList = nullptr;
+
+	wxString m_txnCategoryFilter = "All";
 
 	wxDECLARE_EVENT_TABLE();
 };
