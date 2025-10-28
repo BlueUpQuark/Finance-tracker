@@ -6,6 +6,9 @@
 #include <vector>
 #include <cmath>
 #include <wx/sizer.h>
+#include <wx/choice.h>
+#include <wx/radiobox.h>
+#include <algorithm>
 
 wxBEGIN_EVENT_TABLE(MainFrame, wxFrame)
 EVT_BUTTON(ID_Nav_Spending, MainFrame::OnNavSpending)
@@ -24,10 +27,40 @@ EVT_BUTTON(ID_Spending_AddTxn, MainFrame::OnSpendingAddTxn)
 EVT_BUTTON(ID_Transactions_PrevMonth, MainFrame::OnTransactionsPrevMonth)
 EVT_BUTTON(ID_Transactions_NextMonth, MainFrame::OnTransactionsNextMonth)
 EVT_BUTTON(ID_Transactions_Sort, MainFrame::OnTransactionsSort)
+EVT_BUTTON(ID_Transactions_Sort, MainFrame::OnTransactionsSort)
+EVT_BUTTON(ID_Transactions_PrevMonth, MainFrame::OnTransactionsPrevMonth)
+EVT_BUTTON(ID_Transactions_NextMonth, MainFrame::OnTransactionsNextMonth)
+
 wxEND_EVENT_TABLE()
 
 struct DemoTxn { wxDateTime date; wxString category; wxString desc; double amount; };
 static std::vector<DemoTxn> g_demoTxns;
+
+wxArrayString MainFrame::BuildTxnCategoryChoices() const {
+	wxSortedArrayString uniq;
+	wxArrayString out;
+	out.Add("All");
+	for (const auto& t : g_demoTxns) uniq.Add(t.category);
+	for (unsigned i = 0; i < uniq.size(); ++i) out.Add(uniq[i]);
+	return out;
+}
+
+std::vector<DemoTxn> MainFrame::GetFilteredTxnsForCurrentMonth() const {
+	wxDateTime base = wxDateTime::Now();
+	base.SetDay(1);
+	base.Add(wxDateSpan::Months(m_txnMonthOffset));
+	wxDateTime start = base;
+	wxDateTime end = base; end.Add(wxDateSpan::Months(1));
+
+	std::vector<DemoTxn> out;
+	out.reserve(g_demoTxns.size());
+	for (const auto& t : g_demoTxns) {
+		if (!(t.date.IsBetween(start, end) || t.date.IsSameDate(start))) continue;
+		if (m_txnCategoryFilter != "All" && t.category != m_txnCategoryFilter) continue;
+		out.push_back(t);
+	}
+	return out;
+}
 
 static void SeedDemoTransactionsOnce() {
 	if (!g_demoTxns.empty()) return;
@@ -257,55 +290,50 @@ wxPanel* MainFrame::BuildSpendingPage(wxWindow* parent) {
 }
 
 void MainFrame::RefreshTransactionsView() {
-	// Update the month label
 	if (m_lblTxnMonth)
 		m_lblTxnMonth->SetLabel(MonthLabelFromOffset(m_txnMonthOffset));
 
-	// Determine date range for this month
-	wxDateTime base = wxDateTime::Now();
-	base.SetDay(1);
-	base.Add(wxDateSpan::Months(m_txnMonthOffset));
-	wxDateTime start = base;
-	wxDateTime end = base;
-	end.Add(wxDateSpan::Months(1));
+	// Filter by month (+ category if set)
+	auto items = GetFilteredTxnsForCurrentMonth();
 
-	double income = 0.0;
-	double expenses = 0.0;
+	// Sort according to current settings
+	auto cmp = [&](const DemoTxn& a, const DemoTxn& b) {
+		switch (m_txnSortField) {
+		case TxnSortField::Date:
+			return m_txnSortAsc ? (a.date < b.date) : (b.date < a.date);
+		case TxnSortField::Amount:
+			return m_txnSortAsc ? (a.amount < b.amount) : (b.amount < a.amount);
+		case TxnSortField::Category:
+			return m_txnSortAsc ? (a.category.CmpNoCase(b.category) < 0)
+				: (b.category.CmpNoCase(a.category) < 0);
+		case TxnSortField::Description:
+			return m_txnSortAsc ? (a.desc.CmpNoCase(b.desc) < 0)
+				: (b.desc.CmpNoCase(a.desc) < 0);
+		}
+		return false;
+		};
+	std::sort(items.begin(), items.end(), cmp);
 
-	// Clear the current list
-	if (m_txnList)
-		m_txnList->DeleteAllItems();
+	// Rebuild list + totals
+	double inc = 0.0, exp = 0.0;
+	if (m_txnList) m_txnList->DeleteAllItems();
 
-	// Fill the list with demo data for the selected month
-	for (const auto& t : g_demoTxns) {
-		if (!(t.date.IsBetween(start, end) || t.date.IsSameDate(start)))
-			continue;
+	for (const auto& t : items) {
+		if (t.amount >= 0) inc += t.amount; else exp += -t.amount;
 
-		// Filter by category (if selected)
-		if (m_txnCategoryFilter != "All" && t.category != m_txnCategoryFilter)
-			continue;
-
-		// Totals
-		if (t.amount >= 0)
-			income += t.amount;
-		else
-			expenses += -t.amount;
-
-		// Add row to table
-		wxVector<wxVariant> row;
-		row.push_back(wxVariant(t.date.Format("%Y-%m-%d")));
-		row.push_back(wxVariant(t.category));
-		row.push_back(wxVariant(t.desc));
-		row.push_back(wxVariant(wxString::Format("%s%.2f",
-			t.amount >= 0 ? "+$" : "-$", std::fabs(t.amount))));
-		m_txnList->AppendItem(row);
+		if (m_txnList) {
+			wxVector<wxVariant> row;
+			row.push_back(wxVariant(t.date.Format("%Y-%m-%d")));
+			row.push_back(wxVariant(t.category));
+			row.push_back(wxVariant(t.desc));
+			row.push_back(wxVariant(wxString::Format("%s%.2f",
+				t.amount >= 0 ? "+$" : "-$", std::fabs(t.amount))));
+			m_txnList->AppendItem(row);
+		}
 	}
 
-	// Update totals at the top
-	if (m_lblTxnIncome)
-		m_lblTxnIncome->SetLabel(wxString::Format("$%.2f", income));
-	if (m_lblTxnExpense)
-		m_lblTxnExpense->SetLabel(wxString::Format("$%.2f", expenses));
+	if (m_lblTxnIncome)  m_lblTxnIncome->SetLabel(wxString::Format("$%.2f", inc));
+	if (m_lblTxnExpense) m_lblTxnExpense->SetLabel(wxString::Format("$%.2f", exp));
 }
 
 wxPanel* MainFrame::BuildTransactionsPage(wxWindow* parent) {
@@ -551,6 +579,16 @@ void MainFrame::OnSpendingNextMonth(wxCommandEvent&) {
 	RefreshSpendingView();
 }
 
+void MainFrame::OnTransactionsPrevMonth(wxCommandEvent& evt) {
+	m_txnMonthOffset -= 1;
+	RefreshTransactionsView();
+}
+
+void MainFrame::OnTransactionsNextMonth(wxCommandEvent& evt) {
+	m_txnMonthOffset += 1;
+	RefreshTransactionsView();
+}
+
 void MainFrame::OnSpendingAddTxn(wxCommandEvent&) {
 	// Will work on later
 	wxMessageBox("Open 'Add Transaction' dialog (to be implemented).", "Add Transaction");
@@ -575,8 +613,45 @@ void MainFrame::OnTransactionsNew(wxCommandEvent&) {
 
 
 void MainFrame::OnTransactionsSort(wxCommandEvent&) {
-	wxMessageBox("Show sort options for current month (to be implemented).", "Sort Transactions");
+	wxDialog dlg(this, wxID_ANY, "Sort / Filter", wxDefaultPosition, wxDefaultSize,
+		wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER);
+
+	auto* v = new wxBoxSizer(wxVERTICAL);
+
+	// Sort field
+	wxArrayString fields; fields.Add("Date"); fields.Add("Amount"); fields.Add("Category"); fields.Add("Description");
+	auto* rbField = new wxRadioBox(&dlg, wxID_ANY, "Sort by", wxDefaultPosition, wxDefaultSize,
+		fields, 1, wxRA_SPECIFY_ROWS);
+	rbField->SetSelection(static_cast<int>(m_txnSortField));
+
+	// Order
+	wxArrayString orders; orders.Add("Ascending"); orders.Add("Descending");
+	auto* rbOrder = new wxRadioBox(&dlg, wxID_ANY, "Order", wxDefaultPosition, wxDefaultSize,
+		orders, 1, wxRA_SPECIFY_ROWS);
+	rbOrder->SetSelection(m_txnSortAsc ? 0 : 1);
+
+	// Category filter (includes income categories)
+	wxArrayString cats = BuildTxnCategoryChoices();
+	auto* chCat = new wxChoice(&dlg, wxID_ANY, wxDefaultPosition, wxDefaultSize, cats);
+	int sel = cats.Index(m_txnCategoryFilter);
+	chCat->SetSelection(sel == wxNOT_FOUND ? 0 : sel);
+
+	v->Add(rbField, 0, wxALL | wxEXPAND, 8);
+	v->Add(rbOrder, 0, wxLEFT | wxRIGHT | wxBOTTOM | wxEXPAND, 8);
+	v->Add(new wxStaticText(&dlg, wxID_ANY, "Category filter"), 0, wxLEFT | wxRIGHT, 8);
+	v->Add(chCat, 0, wxALL | wxEXPAND, 8);
+	v->Add(dlg.CreateSeparatedButtonSizer(wxOK | wxCANCEL), 0, wxALL | wxALIGN_RIGHT, 8);
+
+	dlg.SetSizerAndFit(v);
+
+	if (dlg.ShowModal() == wxID_OK) {
+		m_txnSortField = static_cast<TxnSortField>(rbField->GetSelection());
+		m_txnSortAsc = (rbOrder->GetSelection() == 0);
+		m_txnCategoryFilter = chCat->GetStringSelection();
+		RefreshTransactionsView();
+	}
 }
+
 
 
 void MainFrame::OnCategoriesNew(wxCommandEvent&) {

@@ -2,6 +2,7 @@
 #include <wx/wx.h>
 #include <wx/simplebook.h>
 #include <wx/stattext.h>
+#include <wx/dataview.h>
 
 
 // Navigation IDs
@@ -35,6 +36,8 @@ enum : int {
 
 };
 
+struct DemoTxn;
+
 
 class MainFrame : public wxFrame {
 public:
@@ -42,6 +45,11 @@ public:
 
 
 private:
+	enum class TxnSortField { Date, Amount, Category, Description };
+
+	TxnSortField m_txnSortField = TxnSortField::Date;
+	bool m_txnSortAsc = true;                // ascending by default
+
 	// Top navigation bar
 	wxPanel* m_topBar = nullptr;
 	wxButton* m_btnSpend = nullptr;
@@ -85,6 +93,8 @@ private:
 	void UpdateActiveNavButton(int whichId);
 	wxString CurrentMonthLabel() const; // e.g. "October 2025"
 
+	wxArrayString BuildTxnCategoryChoices() const;
+	std::vector<DemoTxn> GetFilteredTxnsForCurrentMonth() const;
 
 	// Nav handlers
 	void OnNavSpending(wxCommandEvent&);
